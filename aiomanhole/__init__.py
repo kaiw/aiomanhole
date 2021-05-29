@@ -66,52 +66,45 @@ class InteractiveInterpreter:
     def attempt_compile(self, line):
         return self.compiler(line)
 
-    @asyncio.coroutine
-    def send_exception(self):
+    async def send_exception(self):
         """When an exception has occurred, write the traceback to the user."""
         self.compiler.reset()
 
         exc = traceback.format_exc()
         self.writer.write(exc.encode('utf8'))
 
-        yield from self.writer.drain()
+        await self.writer.drain()
 
-    @asyncio.coroutine
-    def attempt_exec(self, codeobj, namespace):
+    async def attempt_exec(self, codeobj, namespace):
         with contextlib.redirect_stdout(StringIO()) as buf:
-            value = yield from self._real_exec(codeobj, namespace)
+            value = await self._real_exec(codeobj, namespace)
 
         return value, buf.getvalue()
 
-    @asyncio.coroutine
-    def _real_exec(self, codeobj, namespace):
-        yield  # quick hack to pretend to be a coroutine, which attempt_exec expects
+    async def _real_exec(self, codeobj, namespace):
         return eval(codeobj, namespace)
 
-    @asyncio.coroutine
-    def handle_one_command(self):
+    async def handle_one_command(self):
         """Process a single command. May have many lines."""
 
         while True:
-            yield from self.write_prompt()
-            codeobj = yield from self.read_command()
+            await self.write_prompt()
+            codeobj = await self.read_command()
 
             if codeobj is not None:
-                yield from self.run_command(codeobj)
+                await self.run_command(codeobj)
 
-    @asyncio.coroutine
-    def run_command(self, codeobj):
+    async def run_command(self, codeobj):
         """Execute a compiled code object, and write the output back to the client."""
         try:
-            value, stdout = yield from self.attempt_exec(codeobj, self.namespace)
+            value, stdout = await self.attempt_exec(codeobj, self.namespace)
         except Exception:
-            yield from self.send_exception()
+            await self.send_exception()
             return
         else:
-            yield from self.send_output(value, stdout)
+            await self.send_output(value, stdout)
 
-    @asyncio.coroutine
-    def write_prompt(self):
+    async def write_prompt(self):
         writer = self.writer
 
         if self.compiler.is_partial_command():
@@ -119,10 +112,9 @@ class InteractiveInterpreter:
         else:
             writer.write(sys.ps1.encode('utf8'))
 
-        yield from writer.drain()
+        await writer.drain()
 
-    @asyncio.coroutine
-    def read_command(self):
+    async def read_command(self):
         """Read a command from the user line by line.
 
         Returns a code object suitable for execution.
@@ -130,7 +122,7 @@ class InteractiveInterpreter:
 
         reader = self.reader
 
-        line = yield from reader.readline()
+        line = await reader.readline()
         if line == b'':  # lost connection
             raise ConnectionResetError()
 
@@ -138,13 +130,12 @@ class InteractiveInterpreter:
             # skip the newline to make CommandCompiler work as advertised
             codeobj = self.attempt_compile(line.rstrip(b'\n'))
         except SyntaxError:
-            yield from self.send_exception()
+            await self.send_exception()
             return
 
         return codeobj
 
-    @asyncio.coroutine
-    def send_output(self, value, stdout):
+    async def send_output(self, value, stdout):
         """Write the output or value of the expression back to user.
 
         >>> 5
@@ -161,7 +152,7 @@ class InteractiveInterpreter:
         if stdout:
             writer.write(stdout.encode('utf8'))
 
-        yield from writer.drain()
+        await writer.drain()
 
     def _setup_prompts(self):
         try:
@@ -173,8 +164,7 @@ class InteractiveInterpreter:
         except AttributeError:
             sys.ps2 = "... "
 
-    @asyncio.coroutine
-    def __call__(self, reader, writer):
+    async def __call__(self, reader, writer):
         """Main entry point for an interpreter session with a single client."""
 
         self.reader = reader
@@ -184,11 +174,11 @@ class InteractiveInterpreter:
 
         if self.banner:
             writer.write(self.banner)
-            yield from writer.drain()
+            await writer.drain()
 
         while True:
             try:
-                yield from self.handle_one_command()
+                await self.handle_one_command()
             except ConnectionResetError:
                 writer.close()
                 break
@@ -212,12 +202,11 @@ class ThreadedInteractiveInterpreter(InteractiveInterpreter):
         super().__init__(*args, **kwargs)
         self.command_timeout = command_timeout
 
-    @asyncio.coroutine
-    def _real_exec(self, codeobj, namespace):
+    async def _real_exec(self, codeobj, namespace):
         task = self.loop.run_in_executor(None, eval, codeobj, namespace)
         if self.command_timeout:
             task = asyncio.wait_for(task, self.command_timeout, loop=self.loop)
-        value = yield from task
+        value = await task
         return value
 
 
