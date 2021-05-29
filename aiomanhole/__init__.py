@@ -57,7 +57,11 @@ class InteractiveInterpreter:
         elif banner is None:
             return b''
         else:
-            raise ValueError("Cannot handle unknown banner type {!}, expected str or bytes".format(banner.__class__.__name__))
+            raise ValueError(
+                "Cannot handle unknown banner type {!}, expected str or bytes".format(
+                    banner.__class__.__name__
+                )
+            )
 
     def attempt_compile(self, line):
         return self.compiler(line)
@@ -203,6 +207,7 @@ class ThreadedInteractiveInterpreter(InteractiveInterpreter):
     the running statement (good luck killing a thread) but it will at least
     yield control back to the manhole.
     """
+
     def __init__(self, *args, command_timeout=5, **kwargs):
         super().__init__(*args, **kwargs)
         self.command_timeout = command_timeout
@@ -219,7 +224,15 @@ class ThreadedInteractiveInterpreter(InteractiveInterpreter):
 class InterpreterFactory:
     """Factory class for creating interpreters."""
 
-    def __init__(self, interpreter_class, *args, namespace=None, shared=False, loop=None, **kwargs):
+    def __init__(
+        self,
+        interpreter_class,
+        *args,
+        namespace=None,
+        shared=False,
+        loop=None,
+        **kwargs,
+    ):
         self.interpreter_class = interpreter_class
         self.namespace = namespace or {}
         self.shared = shared
@@ -232,14 +245,22 @@ class InterpreterFactory:
             *self.args,
             loop=self.loop,
             namespace=self.namespace if self.shared else dict(self.namespace),
-            **self.kwargs
+            **self.kwargs,
         )
         return asyncio.ensure_future(interpreter(reader, writer), loop=self.loop)
 
 
-def start_manhole(banner=None, host='127.0.0.1', port=None, path=None,
-        namespace=None, loop=None, threaded=False, command_timeout=5,
-        shared=False):
+def start_manhole(
+    banner=None,
+    host='127.0.0.1',
+    port=None,
+    path=None,
+    namespace=None,
+    loop=None,
+    threaded=False,
+    command_timeout=5,
+    shared=False,
+):
 
     """Starts a manhole server on a given TCP and/or UNIX address.
 
@@ -266,29 +287,37 @@ def start_manhole(banner=None, host='127.0.0.1', port=None, path=None,
 
     if threaded:
         interpreter_class = functools.partial(
-            ThreadedInteractiveInterpreter, command_timeout=command_timeout)
+            ThreadedInteractiveInterpreter, command_timeout=command_timeout
+        )
     else:
         interpreter_class = InteractiveInterpreter
 
     client_cb = InterpreterFactory(
-        interpreter_class, shared=shared, namespace=namespace, banner=banner,
-        loop=loop)
+        interpreter_class, shared=shared, namespace=namespace, banner=banner, loop=loop
+    )
 
     coros = []
 
     if path:
         f = asyncio.ensure_future(
-            asyncio.start_unix_server(client_cb, path=path, loop=loop), loop=loop)
+            asyncio.start_unix_server(client_cb, path=path, loop=loop), loop=loop
+        )
         coros.append(f)
 
     if port is not None:
-        f = asyncio.ensure_future(asyncio.start_server(
-            client_cb, host=host, port=port, loop=loop), loop=loop)
+        f = asyncio.ensure_future(
+            asyncio.start_server(client_cb, host=host, port=port, loop=loop), loop=loop
+        )
         coros.append(f)
 
     return asyncio.gather(*coros, loop=loop)
 
 
 if __name__ == '__main__':
-    start_manhole(path='/var/tmp/testing.manhole', banner='Well this is neat\n', threaded=True, shared=True)
+    start_manhole(
+        path='/var/tmp/testing.manhole',
+        banner='Well this is neat\n',
+        threaded=True,
+        shared=True,
+    )
     asyncio.get_event_loop().run_forever()
