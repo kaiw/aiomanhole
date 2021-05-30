@@ -3,6 +3,8 @@ import contextlib
 import functools
 import sys
 import traceback
+from types import CodeType
+from typing import Any, Awaitable, Dict, List, Optional, Tuple, Type, Union
 
 from codeop import CommandCompiler
 from io import BytesIO, StringIO
@@ -10,18 +12,20 @@ from io import BytesIO, StringIO
 
 __all__ = ['start_manhole']
 
+Namespace = Dict[str, Any]
+
 
 class StatefulCommandCompiler(CommandCompiler):
     """A command compiler that buffers input until a full command is available."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.buf = BytesIO()
 
-    def is_partial_command(self):
+    def is_partial_command(self) -> bool:
         return bool(self.buf.getvalue())
 
-    def __call__(self, source, **kwargs):
+    def __call__(self, source: bytes, **kwargs: Any) -> Optional[CodeType]:
         buf = self.buf
         if self.is_partial_command():
             buf.write(b'\n')
@@ -35,7 +39,7 @@ class StatefulCommandCompiler(CommandCompiler):
             self.reset()
         return codeobj
 
-    def reset(self):
+    def reset(self) -> None:
         self.buf.seek(0)
         self.buf.truncate(0)
 
@@ -43,13 +47,18 @@ class StatefulCommandCompiler(CommandCompiler):
 class InteractiveInterpreter:
     """An interactive asynchronous interpreter."""
 
-    def __init__(self, namespace, banner, loop):
+    def __init__(
+        self,
+        namespace: Optional[Namespace],
+        banner: Union[None, bytes, str],
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
         self.namespace = namespace
         self.banner = self.get_banner(banner)
         self.compiler = StatefulCommandCompiler()
         self.loop = loop
 
-    def get_banner(self, banner):
+    def get_banner(self, banner: Union[None, bytes, str]) -> bytes:
         if isinstance(banner, bytes):
             return banner
         elif isinstance(banner, str):
@@ -63,10 +72,10 @@ class InteractiveInterpreter:
                 )
             )
 
-    def attempt_compile(self, line):
+    def attempt_compile(self, line: bytes) -> Optional[CodeType]:
         return self.compiler(line)
 
-    async def send_exception(self):
+    async def send_exception(self) -> None:
         """When an exception has occurred, write the traceback to the user."""
         self.compiler.reset()
 
@@ -75,16 +84,20 @@ class InteractiveInterpreter:
 
         await self.writer.drain()
 
-    async def attempt_exec(self, codeobj, namespace):
+    async def attempt_exec(
+        self, codeobj: CodeType, namespace: Optional[Namespace]
+    ) -> Tuple[Any, str]:
         with contextlib.redirect_stdout(StringIO()) as buf:
             value = await self._real_exec(codeobj, namespace)
 
         return value, buf.getvalue()
 
-    async def _real_exec(self, codeobj, namespace):
+    async def _real_exec(
+        self, codeobj: CodeType, namespace: Optional[Namespace]
+    ) -> Any:
         return eval(codeobj, namespace)
 
-    async def handle_one_command(self):
+    async def handle_one_command(self) -> None:
         """Process a single command. May have many lines."""
 
         while True:
@@ -94,7 +107,7 @@ class InteractiveInterpreter:
             if codeobj is not None:
                 await self.run_command(codeobj)
 
-    async def run_command(self, codeobj):
+    async def run_command(self, codeobj: CodeType) -> None:
         """Execute a compiled code object, and write the output back to the client."""
         try:
             value, stdout = await self.attempt_exec(codeobj, self.namespace)
@@ -104,7 +117,7 @@ class InteractiveInterpreter:
         else:
             await self.send_output(value, stdout)
 
-    async def write_prompt(self):
+    async def write_prompt(self) -> None:
         writer = self.writer
 
         if self.compiler.is_partial_command():
@@ -114,7 +127,7 @@ class InteractiveInterpreter:
 
         await writer.drain()
 
-    async def read_command(self):
+    async def read_command(self) -> Optional[CodeType]:
         """Read a command from the user line by line.
 
         Returns a code object suitable for execution.
@@ -131,11 +144,11 @@ class InteractiveInterpreter:
             codeobj = self.attempt_compile(line.rstrip(b'\n'))
         except SyntaxError:
             await self.send_exception()
-            return
+            return None
 
         return codeobj
 
-    async def send_output(self, value, stdout):
+    async def send_output(self, value: Any, stdout: str) -> None:
         """Write the output or value of the expression back to user.
 
         >>> 5
@@ -154,7 +167,7 @@ class InteractiveInterpreter:
 
         await writer.drain()
 
-    def _setup_prompts(self):
+    def _setup_prompts(self) -> None:
         try:
             sys.ps1
         except AttributeError:
@@ -164,7 +177,11 @@ class InteractiveInterpreter:
         except AttributeError:
             sys.ps2 = "... "
 
-    async def __call__(self, reader, writer):
+    async def __call__(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> None:
         """Main entry point for an interpreter session with a single client."""
 
         self.reader = reader
@@ -198,16 +215,17 @@ class ThreadedInteractiveInterpreter(InteractiveInterpreter):
     yield control back to the manhole.
     """
 
-    def __init__(self, *args, command_timeout=5, **kwargs):
+    def __init__(self, *args: Any, command_timeout: int = 5, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.command_timeout = command_timeout
 
-    async def _real_exec(self, codeobj, namespace):
+    async def _real_exec(
+        self, codeobj: CodeType, namespace: Optional[Namespace]
+    ) -> Any:
         task = self.loop.run_in_executor(None, eval, codeobj, namespace)
         if self.command_timeout:
             task = asyncio.wait_for(task, self.command_timeout, loop=self.loop)
-        value = await task
-        return value
+        return await task
 
 
 class InterpreterFactory:
@@ -215,13 +233,13 @@ class InterpreterFactory:
 
     def __init__(
         self,
-        interpreter_class,
-        *args,
-        namespace=None,
-        shared=False,
-        loop=None,
-        **kwargs,
-    ):
+        interpreter_class: Type[InteractiveInterpreter],
+        *args: Any,
+        namespace: Optional[Namespace] = None,
+        shared: bool = False,
+        loop: Optional[asyncio.AbstractEventLoop] = None,
+        **kwargs: Any,
+    ) -> None:
         self.interpreter_class = interpreter_class
         self.namespace = namespace or {}
         self.shared = shared
@@ -229,7 +247,11 @@ class InterpreterFactory:
         self.kwargs = kwargs
         self.loop = loop or asyncio.get_event_loop()
 
-    def __call__(self, reader, writer):
+    def __call__(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> Awaitable[None]:
         interpreter = self.interpreter_class(
             *self.args,
             loop=self.loop,
@@ -240,16 +262,16 @@ class InterpreterFactory:
 
 
 def start_manhole(
-    banner=None,
-    host='127.0.0.1',
-    port=None,
-    path=None,
-    namespace=None,
-    loop=None,
-    threaded=False,
-    command_timeout=5,
-    shared=False,
-):
+    banner: Union[None, bytes, str] = None,
+    host: str = '127.0.0.1',
+    port: Optional[int] = None,
+    path: Optional[str] = None,
+    namespace: Optional[Namespace] = None,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+    threaded: bool = False,
+    command_timeout: int = 5,
+    shared: bool = False,
+) -> 'asyncio.Future[Tuple[asyncio.AbstractServer, ...]]':
 
     """Starts a manhole server on a given TCP and/or UNIX address.
 
@@ -285,7 +307,7 @@ def start_manhole(
         interpreter_class, shared=shared, namespace=namespace, banner=banner, loop=loop
     )
 
-    coros = []
+    coros: List[asyncio.Future[asyncio.AbstractServer]] = []
 
     if path:
         f = asyncio.ensure_future(
