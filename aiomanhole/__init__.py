@@ -67,7 +67,7 @@ class InteractiveInterpreter:
             return b''
         else:
             raise ValueError(
-                "Cannot handle unknown banner type {!}, expected str or bytes".format(
+                "Cannot handle unknown banner type {!r}, expected str or bytes".format(
                     banner.__class__.__name__
                 )
             )
@@ -199,7 +199,7 @@ class InteractiveInterpreter:
             except ConnectionResetError:
                 writer.close()
                 break
-            except Exception as e:
+            except Exception:
                 traceback.print_exc()
 
 
