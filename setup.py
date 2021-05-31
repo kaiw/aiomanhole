@@ -29,7 +29,10 @@ settings = {
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
     ],
-    'packages': ['aiomanhole']
+    'packages': ['aiomanhole'],
+    'package_data': {'aiomanhole': ['py.typed']},
+    # Required for typing support
+    'zip_safe': False,
 }
 
 setup(**settings)
