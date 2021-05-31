@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import os
 import shutil
 import tempfile
+from typing import Any, Dict, Sequence
 
 from io import BytesIO
 from unittest import mock
@@ -13,7 +14,7 @@ from aiomanhole import StatefulCommandCompiler, InteractiveInterpreter, start_ma
 
 
 @pytest.fixture(scope='function')
-def compiler():
+def compiler() -> StatefulCommandCompiler:
     return StatefulCommandCompiler()
 
 
@@ -81,29 +82,25 @@ async def send_command(message, reader, writer, loop):
 
 
 class MockStream:
-    def __init__(self):
+    def __init__(self) -> None:
         self.buf = BytesIO()
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         self.buf.write(data)
 
-    @asyncio.coroutine
-    def drain(self):
-        yield
+    async def drain(self) -> None:
         pass
 
-    @asyncio.coroutine
-    def readline(self):
-        yield
+    async def readline(self) -> bytes:
         self.buf.seek(0)
         return self.buf.readline()
 
 
 class TestStatefulCommandCompiler:
-    def test_one_line(self, compiler):
+    def test_one_line(self, compiler: StatefulCommandCompiler) -> None:
         f = compiler(b'f = 5')
         assert f is not None
-        ns = {}
+        ns: Dict[str, Any] = {}
         eval(f, ns)
         assert ns['f'] == 5
 
@@ -172,7 +169,9 @@ class TestStatefulCommandCompiler:
             MULTI_LINE_7,
         ],
     )
-    def test_multi_line(self, compiler, input):
+    def test_multi_line(
+        self, compiler: StatefulCommandCompiler, input: Sequence[bytes]
+    ) -> None:
         for line in input[:-1]:
             assert compiler(line) is None
 
@@ -180,7 +179,9 @@ class TestStatefulCommandCompiler:
 
         assert codeobj is not None
 
-    def test_multi_line__fails_on_missing_line_ending(self, compiler):
+    def test_multi_line__fails_on_missing_line_ending(
+        self, compiler: StatefulCommandCompiler
+    ) -> None:
         lines = [
             b'@decorated',
             b'def foo():',
@@ -204,14 +205,14 @@ class TestInteractiveInterpreter:
             (object(), ValueError),
         ],
     )
-    def test_get_banner(self, banner, expected_result, interpreter):
+    def test_get_banner(self, banner, expected_result, interpreter) -> None:
         if isinstance(expected_result, type) and issubclass(expected_result, Exception):
             pytest.raises(expected_result, interpreter.get_banner, banner)
         else:
             assert interpreter.get_banner(banner) == expected_result
 
     @pytest.mark.parametrize('partial', [True, False])
-    def test_write_prompt(self, interpreter, loop, partial):
+    def test_write_prompt(self, interpreter, loop, partial) -> None:
         with mock.patch.object(
             interpreter.compiler, 'is_partial_command', return_value=partial
         ):
@@ -230,7 +231,7 @@ class TestInteractiveInterpreter:
             (b'def foo():', True),
         ],
     )
-    def test_read_command(self, interpreter, loop, line, partial):
+    def test_read_command(self, interpreter, loop, line, partial) -> None:
         interpreter.reader.write(line)
         f = loop.run_until_complete(interpreter.read_command())
 
@@ -239,7 +240,7 @@ class TestInteractiveInterpreter:
         else:
             assert f is not None
 
-    def test_read_command__raises_on_empty_read(self, interpreter, loop):
+    def test_read_command__raises_on_empty_read(self, interpreter, loop) -> None:
         pytest.raises(
             ConnectionResetError, loop.run_until_complete, interpreter.read_command()
         )
@@ -252,7 +253,9 @@ class TestInteractiveInterpreter:
             (None, 'hello', b'hello'),
         ],
     )
-    def test_send_output(self, interpreter, loop, value, stdout, expected_output):
+    def test_send_output(
+        self, interpreter, loop, value, stdout, expected_output
+    ) -> None:
         loop.run_until_complete(interpreter.send_output(value, stdout))
 
         output = interpreter.writer.buf.getvalue()
@@ -268,7 +271,7 @@ class TestInteractiveInterpreter:
     @pytest.mark.parametrize('server_factory', [tcp_server, unix_server])
     def test_command_over_localhost_network(
         self, loop, server_factory, stdin, expected_output
-    ):
+    ) -> None:
         with server_factory(loop=loop) as (reader, writer):
             output = loop.run_until_complete(
                 send_command(stdin + b'\n', reader, writer, loop)
