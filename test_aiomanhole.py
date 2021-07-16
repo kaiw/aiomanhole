@@ -224,6 +224,7 @@ class TestInteractiveInterpreter:
         expected_value = b'... ' if partial else b'>>> '
         assert interpreter.writer.buf.getvalue() == expected_value
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         'line,partial',
         [
@@ -231,20 +232,21 @@ class TestInteractiveInterpreter:
             (b'def foo():', True),
         ],
     )
-    def test_read_command(self, interpreter, loop, line, partial) -> None:
+    async def test_read_command(self, interpreter, line, partial) -> None:
         interpreter.reader.write(line)
-        f = loop.run_until_complete(interpreter.read_command())
+        f = await interpreter.read_command()
 
         if partial:
             assert f is None
         else:
             assert f is not None
 
-    def test_read_command__raises_on_empty_read(self, interpreter, loop) -> None:
-        pytest.raises(
-            ConnectionResetError, loop.run_until_complete, interpreter.read_command()
-        )
+    @pytest.mark.asyncio
+    async def test_read_command__raises_on_empty_read(self, interpreter) -> None:
+        with pytest.raises(ConnectionResetError):
+            await interpreter.read_command()
 
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         'value,stdout,expected_output',
         [
@@ -253,10 +255,10 @@ class TestInteractiveInterpreter:
             (None, 'hello', b'hello'),
         ],
     )
-    def test_send_output(
+    async def test_send_output(
         self, interpreter, loop, value, stdout, expected_output
     ) -> None:
-        loop.run_until_complete(interpreter.send_output(value, stdout))
+        await interpreter.send_output(value, stdout)
 
         output = interpreter.writer.buf.getvalue()
         assert output == expected_output
