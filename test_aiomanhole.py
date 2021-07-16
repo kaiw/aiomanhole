@@ -279,3 +279,29 @@ class TestInteractiveInterpreter:
                 send_command(stdin + b'\n', reader, writer, loop)
             )
             assert output == expected_output
+
+    def test_send_command__sends_exception_on_syntax_error(
+        self, loop,
+    ) -> None:
+
+        with unix_server(loop=loop) as (reader, writer):
+            output = loop.run_until_complete(
+                send_command(b'print "hello"\n', reader, writer, loop),
+            )
+
+        output_lines = output.splitlines()
+        assert output_lines[0].startswith(b'Traceback (most recent call last)')
+        assert output_lines[-1].startswith(b'SyntaxError: Missing parentheses')
+
+    def test_send_command__sends_exception_on_exception(
+        self, loop,
+    ) -> None:
+
+        with unix_server(loop=loop) as (reader, writer):
+            output = loop.run_until_complete(
+                send_command(b'raise ValueError("hey")\n', reader, writer, loop),
+            )
+
+        output_lines = output.splitlines()
+        assert output_lines[0].startswith(b'Traceback (most recent call last)')
+        assert output_lines[-1].startswith(b'ValueError: hey')
